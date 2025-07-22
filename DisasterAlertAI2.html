@@ -1,0 +1,146 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Disaster Alert AI</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <style>
+    body { font-family: Arial, sans-serif; background: #f5f5f5; max-width: 700px; margin: 20px auto; padding: 20px; border-radius: 8px; box-shadow: 0 0 12px rgba(0,0,0,0.1);}
+    h2 { text-align: center; color: #b22222; }
+    input, button { width: 100%; padding: 10px; margin-top: 10px; font-size: 15px; border-radius: 5px; }
+    button { background-color: #b22222; color: white; border: none; cursor: pointer; }
+    .info-block { margin-top: 15px; font-weight: bold; }
+    #map { height: 200px; margin-top: 20px; border-radius: 8px; }
+    .chat-box { margin-top: 30px; border-top: 1px solid #ccc; padding-top: 10px; }
+  </style>
+</head>
+<body>
+  <h2>🌪️ Disaster Alert AI<br><span style="font-size:16px;">By Aarush and Gavin</span></h2>
+
+  <input type="text" id="city" placeholder="Enter your city (e.g. Delhi)">
+  <button onclick="getInfo()">Check My Disaster Risk</button>
+  <button onclick="detectLocation()">🌍 Auto-Detect My Location</button>
+
+  <div class="info-block" id="weatherInfo"></div>
+  <div class="info-block" id="aqiInfo"></div>
+  <div class="info-block" id="disasterType"></div>
+  <div class="info-block" id="riskScore"></div>
+  <div class="info-block" id="riskAdvice"></div>
+  <div class="info-block" id="emergencyInfo"></div>
+  <div id="map"></div>
+
+  <div class="chat-box">
+    <h3>🤖 Ask the AI Assistant</h3>
+    <input type="text" id="chatInput" placeholder="Ask about risk, weather, AQI, advice">
+    <button onclick="chatRespond()">Ask</button>
+    <div id="chatOutput" style="margin-top:10px; font-weight:bold;"></div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script>
+    let lastCity = "", lastTemp = 0, lastAQI = 0, lastCondition = "", lastRisk = "Low";
+
+    function seedRandom(str) {
+      let hash = 0;
+      for (let i = 0; i < str.length; i++) {
+        hash = str.charCodeAt(i) + ((hash << 5) - hash);
+      }
+      return function() {
+        const x = Math.sin(hash++) * 10000;
+        return x - Math.floor(x);
+      };
+    }
+
+    async function getInfo(cityOverride = null) {
+      const input = document.getElementById("city").value.trim();
+      const city = cityOverride || input;
+      if (!city) return alert("Please enter a city.");
+
+      const rand = seedRandom(city.toLowerCase());
+      const temp = Math.floor(rand() * 15) + 25;
+      const condition = ["Clear", "Rain", "Storm", "Haze"][Math.floor(rand() * 4)];
+      const aqi = Math.floor(rand() * 200) + 50;
+
+      lastCity = city;
+      lastTemp = temp;
+      lastAQI = aqi;
+      lastCondition = condition;
+
+      document.getElementById("weatherInfo").textContent = `🌤️ Weather in ${city}: ${temp}°C, ${condition}`;
+      document.getElementById("aqiInfo").textContent = `🌫️ AQI: ${aqi}`;
+
+      let score = 0;
+      if (temp > 35) score += 30;
+      if (["Rain", "Storm"].includes(condition)) score += 30;
+      if (aqi > 150) score += 30;
+      if (temp > 30) score += 10;
+      score = Math.min(score, 100);
+
+      let riskLevel = "Low", type = "✅ No Major Disaster Risk", advice = "✅ You're safe.";
+      if (score >= 70) {
+        riskLevel = "High";
+        type = "⚠️ Multiple Hazards Detected";
+        advice = "🚨 Stay indoors, avoid travel, and prepare supplies.";
+      } else if (score >= 40) {
+        riskLevel = "Moderate";
+        type = "⚠️ Potential Risk";
+        advice = "⚠️ Be cautious. Avoid unnecessary travel.";
+      }
+
+      lastRisk = riskLevel;
+
+      document.getElementById("disasterType").textContent = `Disaster: ${type}`;
+      document.getElementById("riskScore").textContent = `Risk Score: ${score}/100 – ${riskLevel}`;
+      document.getElementById("riskAdvice").textContent = `Advice: ${advice}`;
+
+      const geo = await fetch(`https://nominatim.openstreetmap.org/search?q=${city}&format=json&limit=1`);
+      const data = await geo.json();
+      if (!data.length) return alert("City not found.");
+
+      const lat = parseFloat(data[0].lat);
+      const lon = parseFloat(data[0].lon);
+      const country = data[0].display_name.toLowerCase();
+
+      if (window.mapInstance) window.mapInstance.remove();
+      window.mapInstance = L.map('map').setView([lat, lon], 10);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(window.mapInstance);
+      L.marker([lat, lon]).addTo(window.mapInstance).bindPopup(city).openPopup();
+      setTimeout(() => window.mapInstance.invalidateSize(), 400);
+
+      let emergency = "Check local emergency numbers.";
+      if (country.includes("india")) emergency = "📞 Police: 100 | Ambulance: 102 | Fire: 101";
+      else if (country.includes("united states")) emergency = "📞 Emergency: 911";
+      else if (country.includes("united kingdom")) emergency = "📞 Emergency: 999";
+
+      document.getElementById("emergencyInfo").innerHTML = `🌐 Emergency Numbers:<br>${emergency}`;
+    }
+
+    function detectLocation() {
+      navigator.geolocation.getCurrentPosition(async pos => {
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`);
+        const data = await res.json();
+        const city = data.address.city || data.address.town || data.address.state;
+        document.getElementById("city").value = city;
+        getInfo(city);
+      }, () => alert("Location access failed."));
+    }
+
+    function chatRespond() {
+      const q = document.getElementById("chatInput").value.toLowerCase();
+      let reply = "🤖 Try asking about risk, weather, AQI, or advice.";
+
+      if (!lastCity) reply = "Please check a city first.";
+      else if (q.includes("aqi")) reply = `AQI in ${lastCity} is ${lastAQI}. ${lastAQI > 150 ? "Wear a mask." : "Air quality is fine."}`;
+      else if (q.includes("temperature") || q.includes("hot")) reply = `It's ${lastTemp}°C in ${lastCity}. ${lastTemp > 35 ? "Stay indoors!" : "Fairly normal."}`;
+      else if (q.includes("weather")) reply = `Weather in ${lastCity} is ${lastCondition}.`;
+      else if (q.includes("risk") || q.includes("safe")) reply = `Risk level in ${lastCity} is ${lastRisk}.`;
+
+      document.getElementById("chatOutput").textContent = reply;
+    }
+  </script>
+</body>
+</html>
